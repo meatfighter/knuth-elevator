@@ -51,6 +51,38 @@ func newUser(in, out, giveUpTime int) *user {
 	}
 }
 
+type node struct {
+	info  interface{}
+	llink *node
+	rlink *node
+}
+
+func newDoublyLinkedList() *node {
+	n := &node{}
+	n.llink = n
+	n.rlink = n
+	return n
+}
+
+func (x *node) insertNodeRight(p *node) {
+	p.llink = x
+	p.rlink = x.rlink
+	x.rlink.llink = p
+	x.rlink = p
+}
+
+func (x *node) insertNodeLeft(p *node) {
+	p.rlink = x
+	p.llink = x.llink
+	x.llink.rlink = p
+	x.llink = p
+}
+
+func (x *node) deleteNode() {
+	x.llink.rlink = x.rlink
+	x.rlink.llink = x.llink
+}
+
 func main() {
 
 }
