@@ -86,6 +86,9 @@ func (x *node) delete() {
 }
 
 func (x *node) deleteElement(info interface{}) {
+	if x == nil {
+		return
+	}
 	p := x
 	for {
 		p = p.llink
@@ -131,6 +134,8 @@ func newWaitQueue() *node {
 	return n
 }
 
+// Subroutine SORTIN adds the current node to the WAIT list, sorting
+// it into the right place based on its NEXTTIME field.
 func (x *node) sortIn(w *waitElement) *node {
 	for {
 		x = x.llink
@@ -143,18 +148,30 @@ func (x *node) sortIn(w *waitElement) *node {
 }
 
 type elevator struct {
+	// On each floor there are two call buttons, one for UP and one for DOWN.
+	// (Actually floor 0 has only UP and floor 4 has only DOWN, but we may ignore
+	// that anomaly since the excess buttons will never be used.) Corresponding to
+	// these buttons, there are ten variables CALLUP[j] and CALLDOWN[j], 0 ≤ j ≤ 4.
+	// There are also variables CALLCAR[j], 0 ≤ j ≤ 4, representing buttons within
+	// the elevator car, which direct it to a destination floor. When a person presses a
+	// button, the appropriate variable is set to 1; the elevator clears the variable to 0
+	// after the request has been fulfilled.
 	callUp   []bool
 	callDown []bool
 	callCar  []bool
-	floor    int
-	d1       bool
-	d2       bool
-	d3       bool
-	state    int
-	step     int
-	pending  *node
+	floor    int   // the current position of the elevator
+	d1       bool  // false except during the time people are getting in or out of the elevator
+	d2       bool  // becomes false if the elevator has sat on one floor without moving for 30 sec or more
+	d3       bool  // false except when the doors are open but nobody is getting in or out of the elevator
+	state    int   // the current state of the elevator (GOINGUP, GOINGDOWN, or NEUTRAL)
+	step     int   // constants refer to steps E1--E9
+	elev1    *node // elevator actions, except for E5 and E9.
+	elev2    *node // independent elevator action at E5
+	elev3    *node // independent elevator action at E9
+	stack    *node // a stack-like list representing the people now on board the elevator.
 }
 
+// Initially FLOOR = 2, D1 = D2 = D3 = 0, and STATE = NEUTRAL.
 func newElevator() *elevator {
 	return &elevator{
 		callUp:   make([]bool, floors),
@@ -163,11 +180,12 @@ func newElevator() *elevator {
 		floor:    floorHome,
 		state:    stateNeutral,
 		step:     stepWaitForCall,
+		stack:    newDoublyLinkedList(),
 	}
 }
 
 type simulator struct {
-	time   int
+	time   int // simulated time clock (tenths of seconds)
 	userID int
 	wait   *node
 	random *rand.Rand
@@ -182,27 +200,68 @@ func newSimulator() *simulator {
 	}
 }
 
-func (s *simulator) scheduleElevator(delay int, listener waitListener) {
-	s.ele.pending.delete()
-	s.ele.pending = s.wait.sortIn(newWaitElement(s.time+delay, listener))
+func (s *simulator) scheduleElevator(elev **node, delay int, listener waitListener) {
+	(*elev).delete()
+	*elev = s.wait.sortIn(newWaitElement(s.time+delay, listener))
 }
 
-func (s *simulator) u() {
-	/*
-		// u1
-		s.userID++
-		id := s.userID
-		in := int(s.random.Int31n(floors))
-		out := int(s.random.Int31n(floors - 1))
-		if out >= in {
-			out++
-		}
-		giveUpTime := int(minGiveUpTime + s.random.Int31n(maxGiveUpTime-minGiveUpTime))
-		interTime := int(minInterTime + s.random.Int31n(maxInterTime-minInterTime))
-		s.wait.sortIn(newWaitElement(s.time+interTime, newWaitFunc(s.u)))
+type user struct {
+	id         int
+	in         int
+	out        int
+	giveUpTime int
+}
 
-		// u2
-	*/
+func newUser(id, in, out, giveUpTime int) *user {
+	return &user{
+		id:         id,
+		in:         in,
+		out:        out,
+		giveUpTime: giveUpTime,
+	}
+}
+
+// U1. [Enter, prepare for successor.] The following quantities are determined in
+// some manner that will not be specified here:
+// IN, the floor on which the new user has entered the system;
+// OUT, the floor to which this user wants to go (OUT ̸= IN);
+// GIVEUPTIME, the amount of time this user will wait for the elevator before
+// running out of patience and deciding to walk;
+// INTERTIME, the amount of time before another user will enter the system.
+// After these quantities have been computed, the simulation program sets
+// things up so that another user enters the system at TIME + INTERTIME.
+func (s *simulator) userEnterPrepareForSuccessor() {
+	s.userID++
+	in := int(s.random.Int31n(floors))
+	out := int(s.random.Int31n(floors - 1))
+	if out >= in {
+		out++
+	}
+	s.wait.sortIn(newWaitElement(s.time+int(minInterTime+s.random.Int31n(maxInterTime-minInterTime)),
+		newWaitFunc(s.userEnterPrepareForSuccessor)))
+	s.wait.sortIn(newWaitElement(s.time, newWaitFunc(func() {
+		s.signalAndWait(newUser(s.userID, in, out, int(minGiveUpTime+s.random.Int31n(maxGiveUpTime-minGiveUpTime))))
+	})))
+}
+
+// U2. [Signal and wait.] (The purpose of this step is to call for the elevator; some
+// special cases arise if the elevator is already on the right floor.) If FLOOR = IN
+// and if the elevator’s next action is step E6 below (that is, if the elevator doors
+// are now closing), send the elevator immediately to its step E3 and cancel its
+// activity E6. (This means that the doors will open again before the elevator
+// moves.) If FLOOR = IN and if D3 ̸= 0, set D3 ← 0, set D1 to a nonzero value,
+// and start up the elevator’s activity E4 again. (This means that the elevator
+// doors are open on this floor, but everyone else has already gotten on or
+// off. Elevator step E4 is a sequencing step that grants people permission to
+// enter the elevator according to normal laws of courtesy; therefore, restarting
+// E4 gives this user a chance to get in before the doors close.) In all other
+// cases, the user sets CALLUP[IN] ← 1 or CALLDOWN[IN] ← 1, according as
+// OUT > IN or OUT < IN; and if D2 = 0 or the elevator is in its “dormant”
+// position E1, the DECISION subroutine specified below is performed. (The
+// DECISION subroutine is used to take the elevator out of NEUTRAL state at
+// certain critical times.)
+func (s *simulator) signalAndWait(u *user) {
+	if s.ele.floor == u.in && 
 }
 
 // E1. [Wait for call.] (At this point the elevator is sitting at floor 2 with the doors
@@ -210,6 +269,48 @@ func (s *simulator) u() {
 // DECISION subroutine will take us to step E3 or E6. Meanwhile, wait.
 func (s *simulator) executeWaitForCall() {
 	s.ele.step = stepWaitForCall
+}
+
+// E2. [Change of state?] If STATE = GOINGUP and CALLUP[j] = CALLDOWN[j] =
+// CALLCAR[j] = 0 for all j > FLOOR, then set STATE ← NEUTRAL or STATE ←
+// GOINGDOWN, according as CALLCAR[j] = 0 for all j < FLOOR or not, and set
+// all CALL variables for the current floor to zero. If STATE = GOINGDOWN, do
+// similar actions with directions reversed.
+func (s *simulator) executeChangeOfState() {
+	s.ele.step = stepChangeOfState
+	if s.ele.state == stateGoingUp {
+		for j := s.ele.floor + 1; j < floors; j++ {
+			if s.ele.callUp[j] || s.ele.callDown[j] || s.ele.callCar[j] {
+				goto done2
+			}
+		}
+		for j := s.ele.floor - 1; j >= 0; j-- {
+			if s.ele.callCar[j] {
+				s.ele.state = stateGoingDown
+				goto done1
+			}
+		}
+		s.ele.state = stateNeutral
+	} else if s.ele.state == stateGoingDown {
+		for j := s.ele.floor - 1; j >= 0; j-- {
+			if s.ele.callUp[j] || s.ele.callDown[j] || s.ele.callCar[j] {
+				goto done2
+			}
+		}
+		for j := s.ele.floor + 1; j < floors; j++ {
+			if s.ele.callCar[j] {
+				s.ele.state = stateGoingUp
+				goto done1
+			}
+		}
+		s.ele.state = stateNeutral
+	}
+done1:
+	s.ele.callUp[s.ele.floor] = false
+	s.ele.callDown[s.ele.floor] = false
+	s.ele.callCar[s.ele.floor] = false
+done2:
+	s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeOpenDoors))
 }
 
 // E3. [Open doors.] Set D1 and D2 to any nonzero values. Set elevator activity
@@ -222,8 +323,21 @@ func (s *simulator) executeOpenDoors() {
 	s.ele.step = stepOpenDoors
 	s.ele.d1 = true
 	s.ele.d2 = true
-	s.scheduleElevator(300, newWaitFunc(s.executeSetInactionIndicator))
-	// TODO ...
+	s.scheduleElevator(&s.ele.elev3, 300, newWaitFunc(s.executeSetInactionIndicator))
+	s.scheduleElevator(&s.ele.elev2, 76, newWaitFunc(s.executeSetInactionIndicator))
+	s.scheduleElevator(&s.ele.elev1, 20, newWaitFunc(s.executeSetInactionIndicator))
+}
+
+// E4. [Let people out, in.] If anyone in the ELEVATOR list has OUT = FLOOR, send
+// the user of this type who has most recently entered immediately to step U6,
+// wait 25 units, and repeat step E4. If no such users exist, but QUEUE[FLOOR]
+// is not empty, send the front person of that queue immediately to step U5
+// instead of U4, wait 25 units, and repeat step E4. But if QUEUE[FLOOR]
+// is empty, set D1 ← 0, make D3 nonzero, and wait for some other activity
+// to initiate further action. (Step E5 will send us to E6, or step U2 will
+// restart E4.)
+func (s *simulator) executeLetPeopleOutIn() {
+
 }
 
 func (s *simulator) executePrepareToMove() {
@@ -250,7 +364,8 @@ func (s *simulator) decision() {
 	// the DECISION subroutine is currently being invoked by the independent
 	// activity E9, it is possible for the elevator coroutine to be positioned at E1.)
 	if s.ele.step == stepWaitForCall && (s.ele.callUp[floorHome] || s.ele.callCar[floorHome] || s.ele.callDown[floorHome]) {
-		s.scheduleElevator(20, newWaitFunc(s.executeOpenDoors))
+		s.scheduleElevator(&s.ele.elev1, 20, newWaitFunc(s.executeOpenDoors))
+		return
 	}
 
 	// D3. [Any calls?] Find the smallest j ̸= FLOOR for which CALLUP[j], CALLCAR[j],
@@ -281,7 +396,8 @@ D4: // D4. [Set STATE.] If FLOOR > j, set STATE ← GOINGDOWN; if FLOOR < j, set
 	// if j ̸= 2, set the elevator to perform step E6 after 20 units of time. Exit
 	// from the subroutine.
 	if s.ele.step == stepWaitForCall && j != 2 {
-		s.scheduleElevator(20, newWaitFunc(s.executePrepareToMove))
+		s.scheduleElevator(&s.ele.elev1, 20, newWaitFunc(s.executePrepareToMove))
+		return
 	}
 }
 
