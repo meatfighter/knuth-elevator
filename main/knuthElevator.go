@@ -1,3 +1,36 @@
+// The Art of Computer Programming, Volume 1: Fundamental Algorithms, Third Edition
+// Chapter 2. Information Structures
+// 2.2.5 Doubly Linked Lists
+// Page 282
+
+// As an example of the use of doubly linked lists, we will now consider the
+// writing of a discrete simulation program. “Discrete simulation” means the
+// simulation of a system in which all changes in the state of the system may
+// be assumed to happen at certain discrete instants of time. The “system” being
+// simulated is usually a set of individual activities that are largely independent
+// although they interact with each other; examples are customers at a store, ships
+// in a harbor, people in a corporation. In a discrete simulation, we proceed by
+// doing whatever is to be done at a certain instant of simulated time, then advance
+// the simulated clock to the next time when some action is scheduled to occur.
+
+// By contrast, a “continuous simulation” would be simulation of activities that
+// are under continuous changes, such as traffic moving on a highway, spaceships
+// traveling to other planets, etc. Continuous simulation can often be satisfactorily
+// approximated by discrete simulation with very small time intervals between
+// steps; however, in such a case we usually have “synchronous” discrete simulation,
+// in which many parts of the system are slightly altered at each discrete time
+// interval, and such an application generally calls for a somewhat different type of
+// program organization than the kind considered here.
+
+// The program developed below simulates the elevator system in the Mathematics
+// building of the California Institute of Technology. The results of such a
+// simulation will perhaps be of use only to people who make reasonably frequent
+// visits to Caltech; and even for them, it may be simpler just to try using the
+// elevator several times instead of writing a computer program. But, as is usual
+// with simulation studies, the methods we will use are of much more interest than
+// the answers given by the program. The methods to be discussed below illustrate
+// typical implementation techniques used with discrete simulation programs.
+
 package main
 
 import (
@@ -6,8 +39,10 @@ import (
 )
 
 const (
-	floors = 5
-
+	// The Mathematics building has five floors: sub-basement, basement, first,
+	// second, and third. There is a single elevator, which has automatic controls
+	// and can stop at each floor. For convenience we will renumber the floors 0, 1,
+	// 2, 3, and 4.
 	floorSubbasement = 0
 	floorBasement    = 1
 	floorFirst       = 2
@@ -16,10 +51,26 @@ const (
 
 	floorHome = floorFirst
 
+	floors = 5
+
+	// The elevator is in one of three states: GOINGUP, GOINGDOWN, or NEUTRAL.
+	// (The current state is indicated to passengers by lighted arrows inside the
+	// elevator.) If it is in NEUTRAL state and not on floor 2, the machine will close
+	// its doors and (if no command is given by the time its doors are shut) it will
+	// change to GOINGUP or GOINGDOWN, heading for floor 2. (This is the “home floor,”
+	// since most passengers get in there.) On floor 2 in NEUTRAL state, the doors will
+	// eventually close and the machine will wait silently for another command. The first
+	// command received for another floor sets the machine GOINGUP or GOINGDOWN as
+	// appropriate; it stays in this state until there are no commands waiting in the
+	// same direction, and then it switches direction or switches to NEUTRAL just before
+	// opening the doors, depending on what other commands are in the CALL variables. The
+	// elevator takes a certain amount of time to open and close its doors, to accelerate
+	// and decelerate, and to get from one floor to another.
 	stateGoingUp = iota
 	stateGoingDown
 	stateNeutral
 
+	// E1--E9
 	stepWaitForCall          = 1
 	stepChangeOfState        = 2
 	stepOpenDoors            = 3
@@ -30,11 +81,11 @@ const (
 	stepGoDownAFloor         = 8
 	stepSetInactionIndicator = 9
 
-	minGiveUpTime = 30 * 10
-	maxGiveUpTime = 10 * 60 * 10
+	minGiveUpTime = 30 * 10      // 30 seconds
+	maxGiveUpTime = 10 * 60 * 10 // 10 minutes
 
-	minInterTime = 5 * 10
-	maxInterTime = 20 * 60 * 10
+	minInterTime = 5 * 10       // 5 seconds
+	maxInterTime = 20 * 60 * 10 // 20 minutes
 )
 
 type node struct {
@@ -296,7 +347,7 @@ func (s *simulator) userSignalAndWait(u *user) {
 // to U5 and cancels the scheduled activity U4.
 func (s *simulator) userEnterQueue(u *user) {
 	u.listNode = newNode(u)
-	s.ele.queue[u.in].insertLeft(u.listNode)
+	s.ele.queue[u.in].insertLeft(u.listNode) // enqueue left
 	u.giveUp = s.wait.sortIn(newWaitElement(s.time+u.giveUpTime, newWaitFunc(func() { s.userGiveUp(u) })))
 }
 
@@ -325,7 +376,7 @@ func (s *simulator) userGiveUp(u *user) {
 // the elevator has reached the desired floor.
 func (s *simulator) userGetIn(u *user) {
 	u.listNode.delete()
-	s.ele.stack.insertLeft(u.listNode)
+	s.ele.stack.insertLeft(u.listNode) // push left
 	s.ele.callCar[u.out] = true
 	if s.ele.state == stateNeutral {
 		if u.out > u.in {
@@ -350,6 +401,24 @@ func (s *simulator) executeWaitForCall() {
 	s.ele.step = stepWaitForCall
 }
 
+func (s *simulator) isAllCallsAboveFalse() bool {
+	for j := s.ele.floor + 1; j < floors; j++ {
+		if s.ele.callUp[j] || s.ele.callDown[j] || s.ele.callCar[j] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *simulator) isAllCallsBelowFalse() bool {
+	for j := s.ele.floor - 1; j >= 0; j-- {
+		if s.ele.callUp[j] || s.ele.callDown[j] || s.ele.callCar[j] {
+			return false
+		}
+	}
+	return true
+}
+
 // E2. [Change of state?] If STATE = GOINGUP and CALLUP[j] = CALLDOWN[j] =
 // CALLCAR[j] = 0 for all j > FLOOR, then set STATE ← NEUTRAL or STATE ←
 // GOINGDOWN, according as CALLCAR[j] = 0 for all j < FLOOR or not, and set
@@ -357,38 +426,25 @@ func (s *simulator) executeWaitForCall() {
 // similar actions with directions reversed.
 func (s *simulator) executeChangeOfState() {
 	s.ele.step = stepChangeOfState
-	if s.ele.state == stateGoingUp {
-		for j := s.ele.floor + 1; j < floors; j++ {
-			if s.ele.callUp[j] || s.ele.callDown[j] || s.ele.callCar[j] {
-				goto done2
-			}
+	if s.ele.state == stateGoingUp && s.isAllCallsAboveFalse() {
+		if s.isAllCallsBelowFalse() {
+			s.ele.state = stateNeutral
+		} else {
+			s.ele.state = stateGoingDown
 		}
-		for j := s.ele.floor - 1; j >= 0; j-- {
-			if s.ele.callCar[j] {
-				s.ele.state = stateGoingDown
-				goto done1
-			}
+		s.ele.callUp[s.ele.floor] = false
+		s.ele.callDown[s.ele.floor] = false
+		s.ele.callCar[s.ele.floor] = false
+	} else if s.ele.state == stateGoingDown && s.isAllCallsBelowFalse() {
+		if s.isAllCallsAboveFalse() {
+			s.ele.state = stateNeutral
+		} else {
+			s.ele.state = stateGoingUp
 		}
-		s.ele.state = stateNeutral
-	} else if s.ele.state == stateGoingDown {
-		for j := s.ele.floor - 1; j >= 0; j-- {
-			if s.ele.callUp[j] || s.ele.callDown[j] || s.ele.callCar[j] {
-				goto done2
-			}
-		}
-		for j := s.ele.floor + 1; j < floors; j++ {
-			if s.ele.callCar[j] {
-				s.ele.state = stateGoingUp
-				goto done1
-			}
-		}
-		s.ele.state = stateNeutral
+		s.ele.callUp[s.ele.floor] = false
+		s.ele.callDown[s.ele.floor] = false
+		s.ele.callCar[s.ele.floor] = false
 	}
-done1:
-	s.ele.callUp[s.ele.floor] = false
-	s.ele.callDown[s.ele.floor] = false
-	s.ele.callCar[s.ele.floor] = false
-done2:
 	s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeOpenDoors))
 }
 
@@ -416,19 +472,131 @@ func (s *simulator) executeOpenDoors() {
 // to initiate further action. (Step E5 will send us to E6, or step U2 will
 // restart E4.)
 func (s *simulator) executeLetPeopleOutIn() {
-
+	s.ele.step = stepLetPeopleOutIn
+	p := s.ele.stack
+	for {
+		p = p.llink // pop left
+		if p == s.ele.stack {
+			break
+		} else {
+			u := p.info.(*user)
+			if u.out == s.ele.floor {
+				s.wait.immed(newWaitElement(s.time, newWaitFunc(func() { s.userGetOut(u) })))
+				s.scheduleElevator(&s.ele.elev1, 25, newWaitFunc(s.executeLetPeopleOutIn))
+				return
+			}
+		}
+	}
+	p = s.ele.queue[s.ele.floor]
+	for {
+		p = p.rlink // dequeue right
+		if p == s.ele.queue[s.ele.floor] {
+			break
+		} else {
+			u := p.info.(*user)
+			s.wait.immed(newWaitElement(s.time, newWaitFunc(func() { s.userGetIn(u) })))
+			s.scheduleElevator(&s.ele.elev1, 25, newWaitFunc(s.executeLetPeopleOutIn))
+			return
+		}
+	}
+	s.ele.d1 = false
+	s.ele.d3 = true
 }
 
+// E5. [Close doors.] If D1 ̸= 0, wait 40 units and repeat this step (the doors flutter
+// a little, but they spring open again, since someone is still getting out or in).
+// Otherwise set D3 ← 0 and set the elevator to start at step E6 after 20 units
+// of time. (This simulates closing the doors after people have finished getting
+// in or out; but if a new user enters on this floor while the doors are closing,
+// they will open again as stated in step U2.)
 func (s *simulator) executeCloseDoors() {
-
+	s.ele.step = stepCloseDoors
+	if s.ele.d1 {
+		s.scheduleElevator(&s.ele.elev2, 40, newWaitFunc(s.executeCloseDoors))
+	} else {
+		s.ele.d3 = false
+		s.scheduleElevator(&s.ele.elev1, 20, newWaitFunc(s.executePrepareToMove))
+	}
 }
 
+// E6. [Prepare to move.] Set CALLCAR[FLOOR] to zero; also set CALLUP[FLOOR]
+// to zero if STATE ̸= GOINGDOWN, and also set CALLDOWN[FLOOR] to zero if
+// STATE ̸= GOINGUP. (Note: If STATE = GOINGUP, the elevator does not clear
+// out CALLDOWN, since it assumes that people who are going down will not
+// have entered; but see exercise 6.) Now perform the DECISION subroutine.
+// If STATE = NEUTRAL even after the DECISION subroutine has acted, go
+// to E1. Otherwise, if D2 ̸= 0, cancel the elevator activity E9. Finally, if
+// STATE = GOINGUP, wait 15 units of time (for the elevator to build up speed)
+// and go to E7; if STATE = GOINGDOWN, wait 15 units and go to E8.
 func (s *simulator) executePrepareToMove() {
 	s.ele.step = stepPrepareToMove
+	s.ele.callCar[s.ele.floor] = false
+	if s.ele.state != stateGoingDown {
+		s.ele.callUp[s.ele.floor] = false
+	}
+	if s.ele.state != stateGoingUp {
+		s.ele.callDown[s.ele.floor] = false
+	}
+	s.decision()
+	if s.ele.state == stateNeutral {
+		s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeWaitForCall))
+	} else {
+		if s.ele.d2 {
+			s.ele.elev3.delete()
+		}
+		if s.ele.state == stateGoingUp {
+			s.scheduleElevator(&s.ele.elev1, 15, newWaitFunc(s.executeGoUpAFloor))
+		} else {
+			s.scheduleElevator(&s.ele.elev1, 15, newWaitFunc(s.executeGoDownAFloor))
+		}
+	}
 }
 
+// E7. [Go up a floor.] Set FLOOR ← FLOOR + 1 and wait 51 units of time. If
+// now CALLCAR[FLOOR] = 1 or CALLUP[FLOOR] = 1, or if ((FLOOR = 2 or
+// CALLDOWN[FLOOR] = 1) and CALLUP[j] = CALLDOWN[j] = CALLCAR[j] = 0
+// for all j > FLOOR), wait 14 units (for deceleration) and go to E2. Otherwise,
+// repeat this step.
+func (s *simulator) executeGoUpAFloor() {
+	s.ele.step = stepGoUpAFloor
+	s.ele.floor++
+	s.scheduleElevator(&s.ele.elev1, 51, newWaitFunc(s.executeGoUpAFloor2))
+}
+
+func (s *simulator) executeGoUpAFloor2() {
+	if s.ele.callCar[s.ele.floor] || s.ele.callUp[s.ele.floor] ||
+		((s.ele.floor == 2 || s.ele.callDown[s.ele.floor]) && s.isAllCallsAboveFalse()) {
+		s.scheduleElevator(&s.ele.elev1, 14, newWaitFunc(s.executeChangeOfState))
+	} else {
+		s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeGoUpAFloor))
+	}
+}
+
+// E8. [Go down a floor.] This step is like E7 with directions reversed, and also
+// the times 51 and 14 are changed to 61 and 23, respectively. (It takes the
+// elevator longer to go down than up.)
+func (s *simulator) executeGoDownAFloor() {
+	s.ele.step = stepGoDownAFloor
+	s.ele.floor--
+	s.scheduleElevator(&s.ele.elev1, 61, newWaitFunc(s.executeGoDownAFloor2))
+}
+
+func (s *simulator) executeGoDownAFloor2() {
+	if s.ele.callCar[s.ele.floor] || s.ele.callDown[s.ele.floor] ||
+		((s.ele.floor == 2 || s.ele.callUp[s.ele.floor]) && s.isAllCallsBelowFalse()) {
+		s.scheduleElevator(&s.ele.elev1, 23, newWaitFunc(s.executeChangeOfState))
+	} else {
+		s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeGoDownAFloor))
+	}
+}
+
+// E9. [Set inaction indicator.] Set D2 ← 0 and perform the DECISION subroutine.
+// (This independent action is initiated in step E3 but it is almost always
+// canceled in step E6. See exercise 4.)
 func (s *simulator) executeSetInactionIndicator() {
 	s.ele.step = stepSetInactionIndicator
+	s.ele.d2 = false
+	s.decision()
 }
 
 // Subroutine D (DECISION subroutine). This subroutine is performed at certain
