@@ -159,3 +159,6 @@ TIME    STATE   FLOOR   D1      D2      D3      step    action
 9998    D       2       0       X       0       E2      Elevator stops.
 9998    N       2       0       X       0       E3      Elevator doors start to open.
 ```
+
+### Bonus Fact
+
