@@ -2,7 +2,7 @@
 
 ### About
 
-This is a [Go](https://golang.org/) implementation of the elevator simulator described by Donald E. Knuth in The Art of Computer Programming (TAOCP) Volume 1.  While reading that tome, I found his example application of doubly linked lists so long and ridiculous that it deserved further exploration. 
+This is a [Go](https://golang.org/) implementation of the elevator simulator described by Donald E. Knuth in *[The Art of Computer Programming](https://en.wikipedia.org/wiki/The_Art_of_Computer_Programming)* (*TAOCP*) Volume 1.  While reading that tome, I found his example application of doubly linked lists so long and ridiculous that it deserved further exploration. 
 
 Knuth’s example is a discrete-event simulation involving concurrently executing entities that interact with each other.  It demonstrates how a sorted pending-event queue and a single thread (in the case of Go, one goroutine) can imitate parallel processing.   
 
