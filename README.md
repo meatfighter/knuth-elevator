@@ -1,4 +1,4 @@
-# knuth-elevator
+# Knuth's Elevator Simulator
 
 ### About
 
