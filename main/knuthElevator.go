@@ -1,7 +1,9 @@
-// The Art of Computer Programming, Volume 1: Fundamental Algorithms, Third Edition
-// Chapter 2. Information Structures
+// Go implementation of the simulator described in:
+
+// The Art of Computer Programming, Volume 1: Fundamental Algorithms, Third Edition (Donald E. Knuth)
+// Chapter 2 Information Structures
 // 2.2.5 Doubly Linked Lists
-// Page 282
+// Pages 280–298
 
 // As an example of the use of doubly linked lists, we will now consider the
 // writing of a discrete simulation program. “Discrete simulation” means the
@@ -82,11 +84,13 @@ const (
 	stepGoDownAFloor         = 8
 	stepSetInactionIndicator = 9
 
-	minGiveUpTime = 30 * 10      // 30 seconds
-	maxGiveUpTime = 10 * 60 * 10 // 10 minutes
+	minGiveUpTime = 30 * 10     // 30 seconds
+	maxGiveUpTime = 2 * 60 * 10 // 2 minutes
 
-	minInterTime = 5 * 10       // 5 seconds
-	maxInterTime = 20 * 60 * 10 // 20 minutes
+	minInterTime = 1 * 10  // 1 seconds
+	maxInterTime = 90 * 10 // 90 seconds
+
+	maxTime = 1000 * 10 // stop simulation after 1000 seconds
 )
 
 type node struct {
@@ -95,6 +99,8 @@ type node struct {
 	rlink *node
 }
 
+// manipulations of doubly linked lists almost always become much easier if a list head node
+// is part of each list
 func newDoublyLinkedList() *node {
 	n := &node{}
 	n.llink = n
@@ -135,6 +141,8 @@ func (x *node) delete() {
 	}
 	x.llink.rlink = x.rlink
 	x.rlink.llink = x.llink
+	x.llink = x
+	x.rlink = x
 }
 
 type waitListener interface {
@@ -153,8 +161,8 @@ func (w *waitFunc) execute() {
 }
 
 type waitElement struct {
-	nextTime int
-	nextInst waitListener
+	nextTime int          // the time when the next action for this entity is to take place
+	nextInst waitListener // where this entity is to start executing instructions
 }
 
 func newWaitElement(nextTime int, nextInst waitListener) *waitElement {
@@ -164,6 +172,7 @@ func newWaitElement(nextTime int, nextInst waitListener) *waitElement {
 	}
 }
 
+// Each entity waiting for time to pass is placed in a doubly linked list
 func newWaitQueue() *node {
 	n := newDoublyLinkedList()
 	n.info = newWaitElement(0, nil)
@@ -185,37 +194,8 @@ func (x *node) sortIn(w *waitElement) *node {
 
 //  Subroutine IMMED inserts the current node at the front of the WAIT list.
 func (x *node) immed(w *waitElement) *node {
-
-	fmt.Println("immediates:")
-	fmt.Printf("Adding: %d\n", w.nextTime)
-	o := x
-	p := o
-	for {
-		x = x.llink
-		if x == p {
-			fmt.Println("done")
-			break
-		} else {
-			fmt.Println(x.info.(*waitElement).nextTime)
-		}
-	}
-
 	n := newNode(w)
 	x.insertRight(n)
-
-	fmt.Println("immediates:")
-	fmt.Printf("Added: %d\n", w.nextTime)
-	p := o
-	for {
-		x = x.llink
-		if x == p {
-			fmt.Println("done")
-			break
-		} else {
-			fmt.Println(x.info.(*waitElement).nextTime)
-		}
-	}
-
 	return n
 }
 
@@ -415,6 +395,7 @@ func (s *simulator) userGiveUp(u *user) {
 func (s *simulator) userGetIn(u *user) {
 	s.print("U5", "User %d gets in.", u.id)
 	u.listNode.delete()
+	u.giveUp.delete()
 	s.ele.stack.insertLeft(u.listNode) // push left
 	s.ele.callCar[u.out] = true
 	if s.ele.state == stateNeutral {
@@ -524,7 +505,7 @@ func (s *simulator) executeLetPeopleOutIn() {
 		} else {
 			u := p.info.(*user)
 			if u.out == s.ele.floor {
-				s.print("E4", "Doors open, users about to exit.")
+				s.print("E4", "Doors are open. Users about to exit.")
 				s.wait.immed(newWaitElement(s.time, newWaitFunc(func() { s.userGetOut(u) })))
 				s.scheduleElevator(&s.ele.elev1, 25, newWaitFunc(s.executeLetPeopleOutIn))
 				return
@@ -537,14 +518,14 @@ func (s *simulator) executeLetPeopleOutIn() {
 		if p == s.ele.queue[s.ele.floor] {
 			break
 		} else {
-			s.print("E4", "Doors open, users about to enter.")
+			s.print("E4", "Doors are open. Users about to enter.")
 			u := p.info.(*user)
 			s.wait.immed(newWaitElement(s.time, newWaitFunc(func() { s.userGetIn(u) })))
 			s.scheduleElevator(&s.ele.elev1, 25, newWaitFunc(s.executeLetPeopleOutIn))
 			return
 		}
 	}
-	s.print("E4", "Doors open, nobody is there.")
+	s.print("E4", "Doors are open. Nobody outside elevator.")
 	s.ele.d1 = false
 	s.ele.d3 = true
 }
@@ -648,7 +629,9 @@ func (s *simulator) executeGoDownAFloor2() {
 // canceled in step E6. See exercise 4.)
 func (s *simulator) executeSetInactionIndicator() {
 	s.ele.step = stepSetInactionIndicator
+	s.print("E9", "Elevator not active")
 	s.ele.d2 = false
+	s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeWaitForCall))
 	s.decision()
 }
 
@@ -690,6 +673,7 @@ func (s *simulator) decision() {
 
 D4: // D4. [Set STATE.] If FLOOR > j, set STATE ← GOINGDOWN; if FLOOR < j, set
 	// STATE ← GOINGUP.
+
 	if s.ele.floor > j {
 		s.ele.state = stateGoingDown
 	} else if s.ele.floor < j {
@@ -734,6 +718,9 @@ func (s *simulator) print(step, action string, a ...interface{}) {
 	fmt.Printf("%04d\t%c\t%d\t%c\t%c\t%c\t%s\t%s\n", s.time, state, s.ele.floor, d1, d2, d3, step, action)
 }
 
+// The heart of the simulation control: It decides which activity is to act
+// next (namely, the first element of the WAIT list, which we know is nonempty),
+// and jumps to it.
 func main() {
 	fmt.Println("TIME\tSTATE\tFLOOR\tD1\tD2\tD3\tstep\taction")
 	s := newSimulator()
@@ -747,7 +734,7 @@ func main() {
 		n.delete()
 		w := n.info.(*waitElement)
 		s.time = w.nextTime
-		if s.time >= 1000 /*10000*/ {
+		if s.time >= maxTime {
 			break
 		}
 		w.nextInst.execute()
