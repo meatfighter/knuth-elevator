@@ -34,6 +34,7 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 )
@@ -184,8 +185,37 @@ func (x *node) sortIn(w *waitElement) *node {
 
 //  Subroutine IMMED inserts the current node at the front of the WAIT list.
 func (x *node) immed(w *waitElement) *node {
+
+	fmt.Println("immediates:")
+	fmt.Printf("Adding: %d\n", w.nextTime)
+	o := x
+	p := o
+	for {
+		x = x.llink
+		if x == p {
+			fmt.Println("done")
+			break
+		} else {
+			fmt.Println(x.info.(*waitElement).nextTime)
+		}
+	}
+
 	n := newNode(w)
 	x.insertRight(n)
+
+	fmt.Println("immediates:")
+	fmt.Printf("Added: %d\n", w.nextTime)
+	p := o
+	for {
+		x = x.llink
+		if x == p {
+			fmt.Println("done")
+			break
+		} else {
+			fmt.Println(x.info.(*waitElement).nextTime)
+		}
+	}
+
 	return n
 }
 
@@ -297,11 +327,11 @@ func (s *simulator) userEnterPrepareForSuccessor() {
 	if out >= in {
 		out++
 	}
+	u := newUser(s.userID, in, out, int(minGiveUpTime+s.random.Int31n(maxGiveUpTime-minGiveUpTime)))
 	s.wait.sortIn(newWaitElement(s.time+int(minInterTime+s.random.Int31n(maxInterTime-minInterTime)),
 		newWaitFunc(s.userEnterPrepareForSuccessor)))
-	s.wait.sortIn(newWaitElement(s.time, newWaitFunc(func() {
-		s.userSignalAndWait(newUser(s.userID, in, out, int(minGiveUpTime+s.random.Int31n(maxGiveUpTime-minGiveUpTime))))
-	})))
+	s.wait.sortIn(newWaitElement(s.time, newWaitFunc(func() { s.userSignalAndWait(u) })))
+	s.print("U1", "User %d arrives at floor %d, destination is %d.", u.id, u.in, u.out)
 }
 
 // U2. [Signal and wait.] (The purpose of this step is to call for the elevator; some
@@ -322,15 +352,19 @@ func (s *simulator) userEnterPrepareForSuccessor() {
 // certain critical times.)
 func (s *simulator) userSignalAndWait(u *user) {
 	if s.ele.floor == u.in && s.ele.step == stepCloseDoors {
+		s.print("U2", "User %d arrives at doors closing and stop them.", u.id)
 		s.scheduleElevatorImmediately(&s.ele.elev1, newWaitFunc(s.executeOpenDoors))
 	} else if s.ele.floor == u.in && s.ele.d3 {
+		s.print("U2", "User %d arrives at open doors.", u.id)
 		s.ele.d3 = false
 		s.ele.d1 = true
 		s.scheduleElevatorImmediately(&s.ele.elev1, newWaitFunc(s.executeLetPeopleOutIn))
 	} else {
 		if u.out > u.in {
+			s.print("U2", "User %d presses up button.", u.id)
 			s.ele.callUp[u.in] = true
 		} else {
+			s.print("U2", "User %d presses down button.", u.id)
 			s.ele.callDown[u.in] = true
 		}
 		if !s.ele.d2 || s.ele.step == stepWaitForCall {
@@ -346,6 +380,7 @@ func (s *simulator) userSignalAndWait(u *user) {
 // more precisely, unless step E4 of the elevator routine below sends this user
 // to U5 and cancels the scheduled activity U4.
 func (s *simulator) userEnterQueue(u *user) {
+	s.print("U3", "User %d stands in queue in front of elevator.", u.id)
 	u.listNode = newNode(u)
 	s.ele.queue[u.in].insertLeft(u.listNode) // enqueue left
 	u.giveUp = s.wait.sortIn(newWaitElement(s.time+u.giveUpTime, newWaitFunc(func() { s.userGiveUp(u) })))
@@ -358,7 +393,10 @@ func (s *simulator) userEnterQueue(u *user) {
 // won’t be long).
 func (s *simulator) userGiveUp(u *user) {
 	if s.ele.floor != u.in || !s.ele.d1 {
+		s.print("U4", "User %d decides to give up, leaves the system.", u.id)
 		u.listNode.delete()
+	} else {
+		s.print("U4", "User %d almost gave up, but stays and waits.", u.id)
 	}
 }
 
@@ -375,6 +413,7 @@ func (s *simulator) userGiveUp(u *user) {
 // Now the user waits until being sent to step U6 by step E4 below, when
 // the elevator has reached the desired floor.
 func (s *simulator) userGetIn(u *user) {
+	s.print("U5", "User %d gets in.", u.id)
 	u.listNode.delete()
 	s.ele.stack.insertLeft(u.listNode) // push left
 	s.ele.callCar[u.out] = true
@@ -391,6 +430,7 @@ func (s *simulator) userGetIn(u *user) {
 // U6. [Get out.] Delete this user from the ELEVATOR list and from the simulated
 // system.
 func (s *simulator) userGetOut(u *user) {
+	s.print("U6", "User %d gets out, leaves the system.", u.id)
 	u.listNode.delete()
 }
 
@@ -398,6 +438,7 @@ func (s *simulator) userGetOut(u *user) {
 // closed, waiting for something to happen.) If someone presses a button, the
 // DECISION subroutine will take us to step E3 or E6. Meanwhile, wait.
 func (s *simulator) executeWaitForCall() {
+	s.print("E1", "Elevator dormant")
 	s.ele.step = stepWaitForCall
 }
 
@@ -425,6 +466,7 @@ func (s *simulator) isAllCallsBelowFalse() bool {
 // all CALL variables for the current floor to zero. If STATE = GOINGDOWN, do
 // similar actions with directions reversed.
 func (s *simulator) executeChangeOfState() {
+	s.print("E2", "Elevator stops.")
 	s.ele.step = stepChangeOfState
 	if s.ele.state == stateGoingUp && s.isAllCallsAboveFalse() {
 		if s.isAllCallsBelowFalse() {
@@ -455,6 +497,7 @@ func (s *simulator) executeChangeOfState() {
 // E5 to start up independently after 76 units of time. Then wait 20 units of
 // time (to simulate opening of the doors) and go to E4.
 func (s *simulator) executeOpenDoors() {
+	s.print("E3", "Elevator doors start to open.")
 	s.ele.step = stepOpenDoors
 	s.ele.d1 = true
 	s.ele.d2 = true
@@ -481,6 +524,7 @@ func (s *simulator) executeLetPeopleOutIn() {
 		} else {
 			u := p.info.(*user)
 			if u.out == s.ele.floor {
+				s.print("E4", "Doors open, users about to exit.")
 				s.wait.immed(newWaitElement(s.time, newWaitFunc(func() { s.userGetOut(u) })))
 				s.scheduleElevator(&s.ele.elev1, 25, newWaitFunc(s.executeLetPeopleOutIn))
 				return
@@ -493,12 +537,14 @@ func (s *simulator) executeLetPeopleOutIn() {
 		if p == s.ele.queue[s.ele.floor] {
 			break
 		} else {
+			s.print("E4", "Doors open, users about to enter.")
 			u := p.info.(*user)
 			s.wait.immed(newWaitElement(s.time, newWaitFunc(func() { s.userGetIn(u) })))
 			s.scheduleElevator(&s.ele.elev1, 25, newWaitFunc(s.executeLetPeopleOutIn))
 			return
 		}
 	}
+	s.print("E4", "Doors open, nobody is there.")
 	s.ele.d1 = false
 	s.ele.d3 = true
 }
@@ -512,8 +558,10 @@ func (s *simulator) executeLetPeopleOutIn() {
 func (s *simulator) executeCloseDoors() {
 	s.ele.step = stepCloseDoors
 	if s.ele.d1 {
+		s.print("E5", "Doors flutter.")
 		s.scheduleElevator(&s.ele.elev2, 40, newWaitFunc(s.executeCloseDoors))
 	} else {
+		s.print("E5", "Elevator doors start to close.")
 		s.ele.d3 = false
 		s.scheduleElevator(&s.ele.elev1, 20, newWaitFunc(s.executePrepareToMove))
 	}
@@ -539,14 +587,17 @@ func (s *simulator) executePrepareToMove() {
 	}
 	s.decision()
 	if s.ele.state == stateNeutral {
+		s.print("E6", "Elevator about to go dormant")
 		s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeWaitForCall))
 	} else {
 		if s.ele.d2 {
 			s.ele.elev3.delete()
 		}
 		if s.ele.state == stateGoingUp {
+			s.print("E6", "Elevator about to go up")
 			s.scheduleElevator(&s.ele.elev1, 15, newWaitFunc(s.executeGoUpAFloor))
 		} else {
+			s.print("E6", "Elevator about to go down")
 			s.scheduleElevator(&s.ele.elev1, 15, newWaitFunc(s.executeGoDownAFloor))
 		}
 	}
@@ -558,6 +609,7 @@ func (s *simulator) executePrepareToMove() {
 // for all j > FLOOR), wait 14 units (for deceleration) and go to E2. Otherwise,
 // repeat this step.
 func (s *simulator) executeGoUpAFloor() {
+	s.print("E7", "Elevator moving up")
 	s.ele.step = stepGoUpAFloor
 	s.ele.floor++
 	s.scheduleElevator(&s.ele.elev1, 51, newWaitFunc(s.executeGoUpAFloor2))
@@ -576,6 +628,7 @@ func (s *simulator) executeGoUpAFloor2() {
 // the times 51 and 14 are changed to 61 and 23, respectively. (It takes the
 // elevator longer to go down than up.)
 func (s *simulator) executeGoDownAFloor() {
+	s.print("E8", "Elevator moving down")
 	s.ele.step = stepGoDownAFloor
 	s.ele.floor--
 	s.scheduleElevator(&s.ele.elev1, 61, newWaitFunc(s.executeGoDownAFloor2))
@@ -652,6 +705,51 @@ D4: // D4. [Set STATE.] If FLOOR > j, set STATE ← GOINGDOWN; if FLOOR < j, set
 	}
 }
 
+func (s *simulator) print(step, action string, a ...interface{}) {
+	var state, d1, d2, d3 rune
+	switch s.ele.state {
+	case stateGoingDown:
+		state = 'D'
+	case stateGoingUp:
+		state = 'U'
+	default:
+		state = 'N'
+	}
+	if s.ele.d1 {
+		d1 = 'X'
+	} else {
+		d1 = '0'
+	}
+	if s.ele.d2 {
+		d2 = 'X'
+	} else {
+		d2 = '0'
+	}
+	if s.ele.d3 {
+		d3 = 'X'
+	} else {
+		d3 = '0'
+	}
+	action = fmt.Sprintf(action, a...)
+	fmt.Printf("%04d\t%c\t%d\t%c\t%c\t%c\t%s\t%s\n", s.time, state, s.ele.floor, d1, d2, d3, step, action)
+}
+
 func main() {
-	//s := newSimulator()
+	fmt.Println("TIME\tSTATE\tFLOOR\tD1\tD2\tD3\tstep\taction")
+	s := newSimulator()
+	s.userEnterPrepareForSuccessor()
+	for {
+		n := s.wait.rlink
+		if n == s.wait {
+			fmt.Println("ERROR: Wait queue is empty.")
+			break
+		}
+		n.delete()
+		w := n.info.(*waitElement)
+		s.time = w.nextTime
+		if s.time >= 1000 /*10000*/ {
+			break
+		}
+		w.nextInst.execute()
+	}
 }
