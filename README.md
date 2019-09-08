@@ -162,3 +162,4 @@ TIME    STATE   FLOOR   D1      D2      D3      step    action
 
 ### Bonus Fact
 
+One of the references on [Wikipedia’s Elevator Paradox page](https://en.wikipedia.org/wiki/Elevator_paradox) is [a book by Donald E. Knuth](https://www.amazon.com/Selected-Papers-Games-Lecture-Notes/dp/157586584X).
