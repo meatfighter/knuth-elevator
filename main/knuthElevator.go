@@ -310,7 +310,7 @@ func (s *simulator) userEnterPrepareForSuccessor() {
 	u := newUser(s.userID, in, out, int(minGiveUpTime+s.random.Int31n(maxGiveUpTime-minGiveUpTime)))
 	s.wait.sortIn(newWaitElement(s.time+int(minInterTime+s.random.Int31n(maxInterTime-minInterTime)),
 		newWaitFunc(s.userEnterPrepareForSuccessor)))
-	s.wait.sortIn(newWaitElement(s.time, newWaitFunc(func() { s.userSignalAndWait(u) })))
+	s.wait.immed(newWaitElement(s.time, newWaitFunc(func() { s.userSignalAndWait(u) })))
 	s.print("U1", "User %d arrives at floor %d, destination is %d.", u.id, u.in, u.out)
 }
 
@@ -351,7 +351,7 @@ func (s *simulator) userSignalAndWait(u *user) {
 			s.decision()
 		}
 	}
-	s.wait.sortIn(newWaitElement(s.time, newWaitFunc(func() { s.userEnterQueue(u) })))
+	s.wait.immed(newWaitElement(s.time, newWaitFunc(func() { s.userEnterQueue(u) })))
 }
 
 // U3. [Enter queue.] Insert this user at the rear of QUEUE[IN], which is a linear
@@ -468,7 +468,7 @@ func (s *simulator) executeChangeOfState() {
 		s.ele.callDown[s.ele.floor] = false
 		s.ele.callCar[s.ele.floor] = false
 	}
-	s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeOpenDoors))
+	s.scheduleElevatorImmediately(&s.ele.elev1, newWaitFunc(s.executeOpenDoors))
 }
 
 // E3. [Open doors.] Set D1 and D2 to any nonzero values. Set elevator activity
@@ -569,7 +569,7 @@ func (s *simulator) executePrepareToMove() {
 	s.decision()
 	if s.ele.state == stateNeutral {
 		s.print("E6", "Elevator about to go dormant")
-		s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeWaitForCall))
+		s.scheduleElevatorImmediately(&s.ele.elev1, newWaitFunc(s.executeWaitForCall))
 	} else {
 		if s.ele.d2 {
 			s.ele.elev3.delete()
@@ -601,7 +601,7 @@ func (s *simulator) executeGoUpAFloor2() {
 		((s.ele.floor == 2 || s.ele.callDown[s.ele.floor]) && s.isAllCallsAboveFalse()) {
 		s.scheduleElevator(&s.ele.elev1, 14, newWaitFunc(s.executeChangeOfState))
 	} else {
-		s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeGoUpAFloor))
+		s.scheduleElevatorImmediately(&s.ele.elev1, newWaitFunc(s.executeGoUpAFloor))
 	}
 }
 
@@ -620,7 +620,7 @@ func (s *simulator) executeGoDownAFloor2() {
 		((s.ele.floor == 2 || s.ele.callUp[s.ele.floor]) && s.isAllCallsBelowFalse()) {
 		s.scheduleElevator(&s.ele.elev1, 23, newWaitFunc(s.executeChangeOfState))
 	} else {
-		s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeGoDownAFloor))
+		s.scheduleElevatorImmediately(&s.ele.elev1, newWaitFunc(s.executeGoDownAFloor))
 	}
 }
 
@@ -628,10 +628,8 @@ func (s *simulator) executeGoDownAFloor2() {
 // (This independent action is initiated in step E3 but it is almost always
 // canceled in step E6. See exercise 4.)
 func (s *simulator) executeSetInactionIndicator() {
-	s.ele.step = stepSetInactionIndicator
 	s.print("E9", "Elevator not active")
 	s.ele.d2 = false
-	s.scheduleElevator(&s.ele.elev1, 0, newWaitFunc(s.executeWaitForCall))
 	s.decision()
 }
 
@@ -673,7 +671,6 @@ func (s *simulator) decision() {
 
 D4: // D4. [Set STATE.] If FLOOR > j, set STATE ← GOINGDOWN; if FLOOR < j, set
 	// STATE ← GOINGUP.
-
 	if s.ele.floor > j {
 		s.ele.state = stateGoingDown
 	} else if s.ele.floor < j {
