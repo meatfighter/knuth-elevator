@@ -12,7 +12,6 @@ While that concept could have been explained with a basic, contrived system, Knu
 
 ```
 TIME    STATE   FLOOR   D1      D2      D3      step    action
-TIME    STATE   FLOOR   D1      D2      D3      step    action
 0000    N       2       0       0       0       U1      User 1 arrives at floor 2, destination is 0.
 0000    N       2       0       0       0       U2      User 1 presses down button.
 0000    N       2       0       0       0       U3      User 1 stands in queue in front of elevator.
