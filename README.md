@@ -174,4 +174,4 @@ TIME    STATE   FLOOR   D1      D2      D3      step    action
 
 ### Bonus Fact
 
-One of the references on [Wikipedia’s Elevator Paradox page](https://en.wikipedia.org/wiki/Elevator_paradox) is a paper written by Donald E. Knuth dated many years prior to his simulator.  A side-effect of that research experience may have been a lasting interest of the intricate details of elevator systems. 
+One of the references on [Wikipedia’s Elevator Paradox page](https://en.wikipedia.org/wiki/Elevator_paradox) is a paper written by Donald E. Knuth dated many years prior to his simulator.  A side-effect of that research experience may have been a lasting interest in the intricate details of elevator systems. 
